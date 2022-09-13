@@ -103,6 +103,31 @@ namespace cereal
       that the container is variable sized and may be edited.
 
       \ingroup Archives */
+#ifdef __SIZEOF_INT128__
+  namespace int128_support {
+      // In order to correctly identify GCC and clang we must either:
+      // 1. use "#if defined(__GNUC__) && !defined(__clang__)" (preferred option)
+      // 2. or check the condition "#if defined __clang__" first
+      // The reason is: clang always defines __GNUC__ and __GNUC_MINOR__ and __GNUC_PATCHLEVEL__ according to
+      // the version of gcc that it claims full compatibility with.
+      #if defined(__GNUC__) && !defined(__clang__)
+          #pragma GCC diagnostic push
+          #pragma GCC diagnostic ignored "-Wpedantic"
+      #elif defined __clang__
+          #pragma clang diagnostic push
+          #pragma clang diagnostic ignored "-Wpedantic"
+      #endif
+
+      using int128 = __int128;
+      using uint128 = unsigned __int128;
+
+      #if defined(__GNUC__) && !defined(__clang__)
+          #pragma GCC diagnostic pop
+      #elif defined __clang__
+          #pragma clang diagnostic pop
+      #endif
+  }
+#endif
   class JSONOutputArchive : public OutputArchive<JSONOutputArchive>, public traits::TextArchive
   {
     enum class NodeType { StartObject, InObject, StartArray, InArray };
@@ -252,6 +277,23 @@ namespace cereal
       void saveValue(int64_t i64)           { itsWriter.Int64(i64);                                                      }
       //! Saves a uint64 to the current node
       void saveValue(uint64_t u64)          { itsWriter.Uint64(u64);                                                     }
+      // #define STR(x) #x
+      // #define XSTR(x) STR(x)
+      // #pragma message "The value of __SIZEOF_INT128__: " XSTR(__SIZEOF_INT128__)
+      #ifdef __SIZEOF_INT128__
+          //! Saves an int128 as a string of two int64
+          void saveValue(int128_support::int128 i128) {
+              uint64_t m(~0);
+              std::string srep( std::to_string((uint64_t(i128>>64))&m) + ":" + std::to_string(uint64_t(i128 & m)));
+              itsWriter.String( srep.c_str() );
+          }
+          //! Saves an unsigned int128 as a string of two int64
+          void saveValue(int128_support::uint128 u128) {
+              uint64_t m(~0);
+              std::string srep( std::to_string((uint64_t(u128>>64))&m) + ":" + std::to_string(uint64_t(u128&m)));
+              itsWriter.String( srep.c_str() );
+          }
+      #endif
       //! Saves a double to the current node
       void saveValue(double d)              { itsWriter.Double(d);                                                       }
       //! Saves a string to the current node
@@ -317,6 +359,10 @@ namespace cereal
                                           !std::is_same<T, unsigned long>::value,
                                           !std::is_same<T, std::int64_t>::value,
                                           !std::is_same<T, std::uint64_t>::value,
+#ifdef __SIZEOF_INT128__
+                                          !std::is_same<T, int128_support::int128>::value,
+                                          !std::is_same<T, int128_support::uint128>::value,
+#endif
                                           !std::is_same<T, long long>::value,
                                           !std::is_same<T, unsigned long long>::value,
                                           (sizeof(T) >= sizeof(long double) || sizeof(T) >= sizeof(long long))> = traits::sfinae> inline
@@ -729,6 +775,10 @@ namespace cereal
                                           !std::is_same<T, unsigned long>::value,
                                           !std::is_same<T, std::int64_t>::value,
                                           !std::is_same<T, std::uint64_t>::value,
+#ifdef __SIZEOF_INT128__
+                                          !std::is_same<T, int128_support::int128>::value,
+                                          !std::is_same<T, int128_support::uint128>::value,
+#endif
                                           !std::is_same<T, long long>::value,
                                           !std::is_same<T, unsigned long long>::value,
                                           (sizeof(T) >= sizeof(long double) || sizeof(T) >= sizeof(long long))> = traits::sfinae>
@@ -738,6 +788,23 @@ namespace cereal
         loadValue( encoded );
         stringToNumber( encoded, val );
       }
+
+#ifdef __SIZEOF_INT128__
+      template<class T, traits::EnableIf<std::is_same<T,int128_support::int128>::value || std::is_same<T,int128_support::uint128>::value> = traits::sfinae>
+      inline void loadValue(T & val) {
+          std::string sval;
+          loadValue( sval );
+          std::stringstream ss( sval );
+          uint64_t hi, lo;
+          ss >> hi;
+          ss.get();
+          ss >> lo;
+          if( ss.eof() )
+              val = (int128_support::int128(hi)<<64) | lo;
+          else
+              val = 0;
+      }
+#endif
 
       //! Loads the size for a SizeTag
       void loadSize(size_type & size)
