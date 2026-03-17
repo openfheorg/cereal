@@ -38,6 +38,12 @@ namespace cereal
 {
   namespace memory_detail
   {
+    template <std::size_t Size, std::size_t Align>
+    struct AlignedBuffer
+    {
+      alignas(Align) unsigned char data[Size];
+    };
+
     //! A wrapper class to notify cereal that it is ok to serialize the contained pointer
     /*! This mechanism allows us to intercept and properly handle polymorphic pointers
         @internal */
@@ -134,7 +140,7 @@ namespace cereal
       // typedefs for parent type and storage type
       using BaseType = typename ::cereal::traits::get_shared_from_this_base<T>::type;
       using ParentType = std::enable_shared_from_this<BaseType>;
-      using StorageType = typename std::aligned_storage<sizeof(ParentType), CEREAL_ALIGNOF(ParentType)>::type;
+      using StorageType = AlignedBuffer<sizeof(ParentType), CEREAL_ALIGNOF(ParentType)>;
 
       public:
         //! Saves the state of some type inheriting from enable_shared_from_this
@@ -285,8 +291,8 @@ namespace cereal
     if( id & detail::msb_32bit )
     {
       // Storage type for the pointer - since we can't default construct this type,
-      // we'll allocate it using std::aligned_storage and use a custom deleter
-      using AlignedStorage = typename std::aligned_storage<sizeof(T), CEREAL_ALIGNOF(T)>::type;
+      // we'll allocate it using aligned raw storage and use a custom deleter
+      using AlignedStorage = memory_detail::AlignedBuffer<sizeof(T), CEREAL_ALIGNOF(T)>;
 
       // Valid flag - set to true once construction finishes
       //  This prevents us from calling the destructor on
@@ -376,8 +382,8 @@ namespace cereal
     {
       using NonConstT = typename std::remove_const<T>::type;
       // Storage type for the pointer - since we can't default construct this type,
-      // we'll allocate it using std::aligned_storage
-      using AlignedStorage = typename std::aligned_storage<sizeof(NonConstT), CEREAL_ALIGNOF(NonConstT)>::type;
+      // we'll allocate it using aligned raw storage
+      using AlignedStorage = memory_detail::AlignedBuffer<sizeof(NonConstT), CEREAL_ALIGNOF(NonConstT)>;
 
       // Allocate storage - note the AlignedStorage type so that deleter is correct if
       //                    an exception is thrown before we are initialized
